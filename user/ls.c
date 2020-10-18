@@ -6,6 +6,11 @@
 char*
 fmtname(char *path)
 {
+  // if the length of file name is longer than DIRSIZE， 
+  //     then return file name;
+  // else if the length of file name is shorter than DIRSIZE, 
+  //     then fill it with space.
+
   static char buf[DIRSIZ+1];
   char *p;
 
