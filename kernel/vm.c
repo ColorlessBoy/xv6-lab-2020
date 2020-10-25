@@ -56,6 +56,13 @@ kvminithart()
   sfence_vma();
 }
 
+void
+kvminithart1(pagetable_t kptbl)
+{
+  w_satp(MAKE_SATP(kptbl));
+  sfence_vma();
+}
+
 // Return the address of the PTE in page table pagetable
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page-table pages.
@@ -462,4 +469,11 @@ vmprint(pagetable_t pagetable, int deepth)
         vmprint((pagetable_t)child, deepth+1);
     }
   }
+}
+
+// Create a kernel page table.
+pagetable_t
+kvmcreate()
+{
+  return kernel_pagetable;
 }
