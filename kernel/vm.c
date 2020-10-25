@@ -450,7 +450,7 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 
 // Recursively print page-table pages information.
 void
-vmprint(pagetable_t pagetable, int deepth)
+vmprint1(pagetable_t pagetable, int deepth)
 {
   if(deepth == 0)
     printf("page table %p\n", pagetable);
@@ -466,10 +466,16 @@ vmprint(pagetable_t pagetable, int deepth)
 
       if((pte & (PTE_R|PTE_W|PTE_X)) == 0) 
         // this PTE points to a lower-level page table.
-        vmprint((pagetable_t)child, deepth+1);
+        vmprint1((pagetable_t)child, deepth+1);
     }
   }
 }
+void
+vmprint(pagetable_t pagetable)
+{
+  vmprint1(pagetable, 0);
+}
+
 
 // Create a kernel page table.
 pagetable_t
