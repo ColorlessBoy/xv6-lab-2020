@@ -479,7 +479,80 @@ vmprint(pagetable_t pagetable)
 
 // Create a kernel page table.
 pagetable_t
-kvmcreate()
+kvmcreate(void)
 {
-  return kernel_pagetable;
+  pagetable_t kptbl = uvmcreate();
+
+  if(kptbl == 0)
+    return 0;
+
+  // uart registers
+  if(mappages(kptbl, UART0, PGSIZE, UART0, PTE_R | PTE_W) != 0){
+    return 0;
+  }
+
+  // virtio mmio disk interface
+  if(mappages(kptbl, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W) != 0){
+    uvmunmap(kptbl, UART0, 1, 0);
+    return 0;
+  }
+
+  // CLINT
+  if(mappages(kptbl, CLINT, 0x10000, CLINT, PTE_R | PTE_W) != 0){
+    uvmunmap(kptbl, UART0, 1, 0);
+    uvmunmap(kptbl, VIRTIO0, 1, 0);
+    return 0;
+  }
+
+  // PLIC
+  if(mappages(kptbl, PLIC, 0x400000, PLIC, PTE_R | PTE_W) != 0){
+    uvmunmap(kptbl, UART0, 1, 0);
+    uvmunmap(kptbl, VIRTIO0, 1, 0);
+    uvmunmap(kptbl, CLINT, PGROUNDUP(0x10000)/PGSIZE, 0);
+    return 0;
+  }
+
+  // map kernel text executable and read-only.
+  if(mappages(kptbl,KERNBASE, (uint64)etext-KERNBASE, KERNBASE, PTE_R | PTE_X) != 0){
+    uvmunmap(kptbl, UART0, 1, 0);
+    uvmunmap(kptbl, VIRTIO0, 1, 0);
+    uvmunmap(kptbl, CLINT, PGROUNDUP(0x10000)/PGSIZE, 0);
+    uvmunmap(kptbl, PLIC, PGROUNDUP(0x400000)/PGSIZE, 0);
+    return 0;
+  }
+
+  // map kernel data and the physical RAM we'll make use of.
+  if(mappages(kptbl, (uint64)etext, PHYSTOP-(uint64)etext, (uint64)etext, PTE_R | PTE_W) != 0){
+    uvmunmap(kptbl, UART0, 1, 0);
+    uvmunmap(kptbl, VIRTIO0, 1, 0);
+    uvmunmap(kptbl, CLINT, PGROUNDUP(0x10000)/PGSIZE, 0);
+    uvmunmap(kptbl, PLIC, PGROUNDUP(0x400000)/PGSIZE, 0);
+    uvmunmap(kptbl, KERNBASE, PGROUNDUP((uint64)etext-KERNBASE)/PGSIZE, 0);
+    return 0;
+  }
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  if(mappages(kptbl, TRAMPOLINE, PGSIZE, (uint64)trampoline, PTE_R | PTE_X) != 0){
+    uvmunmap(kptbl, UART0, 1, 0);
+    uvmunmap(kptbl, VIRTIO0, 1, 0);
+    uvmunmap(kptbl, CLINT, PGROUNDUP(0x10000)/PGSIZE, 0);
+    uvmunmap(kptbl, PLIC, PGROUNDUP(0x400000)/PGSIZE, 0);
+    uvmunmap(kptbl, KERNBASE, PGROUNDUP((uint64)etext-KERNBASE)/PGSIZE, 0);
+    uvmunmap(kptbl, (uint64)etext, PGROUNDUP(PHYSTOP-(uint64)etext)/PGSIZE, 0);
+  };
+  return kptbl;
+}
+
+// Free a kernel page table.
+void kvmfree(pagetable_t kptbl)
+{
+  uvmunmap(kptbl, UART0, 1, 0);
+  uvmunmap(kptbl, VIRTIO0, 1, 0);
+  uvmunmap(kptbl, CLINT, PGROUNDUP(0x10000)/PGSIZE, 0);
+  uvmunmap(kptbl, PLIC, PGROUNDUP(0x400000)/PGSIZE, 0);
+  uvmunmap(kptbl, KERNBASE, PGROUNDUP((uint64)etext-KERNBASE)/PGSIZE, 0);
+  uvmunmap(kptbl, (uint64)etext, PGROUNDUP(PHYSTOP-(uint64)etext)/PGSIZE, 0);
+  uvmunmap(kptbl, TRAMPOLINE, 1, 0);
+  uvmfree(kptbl, 0);
 }

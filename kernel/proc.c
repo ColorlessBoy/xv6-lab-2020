@@ -85,6 +85,21 @@ allocpid() {
   return pid;
 }
 
+
+// Set kernel stack
+uint64
+kstackset(struct proc *p){
+  if(mappages(p->kptbl, p->kstack, PGSIZE, kvmpa(p->kstack), PTE_R | PTE_W) != 0)
+    return 0;
+  return p->kstack;
+}
+
+// Free kernel stack
+void
+kstackfree(struct proc *p){
+  uvmunmap(p->kptbl, p->kptbl_kstack, 1, 0);
+}
+
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -122,6 +137,18 @@ found:
   }
 
   p->kptbl = kvmcreate();
+  if(p->kptbl == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  p->kptbl_kstack = kstackset(p);
+  if(p->kptbl_kstack == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -141,9 +168,19 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+
+  if(p->kptbl_kstack)
+    kstackfree(p);
+  p->kptbl_kstack = 0;
+
+  if(p->kptbl)
+    kvmfree(p->kptbl);
+  p->kptbl = 0;
+
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
+
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -470,23 +507,24 @@ scheduler(void)
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
+        kvminithart1(p->kptbl);
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
-        kvminithart1(p->kptbl);
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
-        kvminithart();
 
         found = 1;
+        kvminithart();
       }
       release(&p->lock);
     }
+
 #if !defined (LAB_FS)
     if(found == 0) {
       intr_on();
