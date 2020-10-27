@@ -173,8 +173,10 @@ freeproc(struct proc *p)
     kstackfree(p);
   p->kptbl_kstack = 0;
 
-  if(p->kptbl)
+  if(p->kptbl){
+    kvmdealloc(p->kptbl, p->sz, 0);
     kvmfree(p->kptbl);
+  }
   p->kptbl = 0;
 
   if(p->pagetable)
@@ -259,6 +261,7 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  kvmcopy(p->kptbl, p->pagetable, 0, p->sz);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -285,9 +288,14 @@ growproc(int n)
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    if(kvmcopy(p->kptbl, p->pagetable, p->sz, sz) < 0) {
+      return -1;
+    }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    kvmdealloc(p->kptbl, p->sz, sz);
   }
+
   p->sz = sz;
   return 0;
 }
@@ -313,6 +321,11 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+  if(kvmcopy(np->kptbl, np->pagetable, 0, np->sz) < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
 
   np->parent = p;
 

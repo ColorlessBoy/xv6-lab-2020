@@ -115,6 +115,10 @@ exec(char *path, char **argv)
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+  
+  kvmdealloc(p->kptbl, oldsz, 0);
+  if(kvmcopy(p->kptbl, p->pagetable, 0, p->sz) < 0)
+    return -1;
 
   vmprint(p->pagetable);
 
