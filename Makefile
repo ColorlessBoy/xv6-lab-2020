@@ -288,8 +288,27 @@ qemu-gdb: $K/kernel .gdbinit fs.img
 	@echo "*** Now run 'gdb' in another window." 1>&2
 	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
 
-gdb: $K/kernel .gdbinit fs.img
-	riscv64-unknown-elf-gdb --command=.gdbinit
+## ==================Docker Commands Start======================================
+docker-qemu: 
+	-docker rm -f xv6-labs-2020
+	docker run  -it --name "xv6-labs-2020"\
+				-w /xv6-labs-2020 -v "$(shell pwd):/xv6-labs-2020" \
+				penglingwei/xv6-labs-2020:latest \
+				/bin/bash -c "make qemu" 
+
+docker-qemu-gdb: 
+	-docker rm -f xv6-labs-2020
+	docker run  -it --name "xv6-labs-2020"\
+				-w /xv6-labs-2020 -v "$(shell pwd):/xv6-labs-2020" \
+				penglingwei/xv6-labs-2020:latest \
+				/bin/bash -c "make qemu-gdb" 
+
+docker-gdb: .gdbinit
+	docker exec -it xv6-labs-2020 /bin/bash -c "gdb-multiarch --command .gdbinit"
+
+docker-rm:
+	docker rm -f xv6-labs-2020
+## ==================Docker Commands End========================================
 
 ifeq ($(LAB),net)
 # try to generate a unique port for the echo server
