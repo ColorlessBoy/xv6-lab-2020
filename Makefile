@@ -175,6 +175,7 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
+	$U/_alarmtest\
 
 
 
@@ -289,6 +290,13 @@ qemu-gdb: $K/kernel .gdbinit fs.img
 	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
 
 ## ==================Docker Commands Start======================================
+docker: 
+	-docker rm -f xv6-labs-2020
+	docker run  -it --name "xv6-labs-2020"\
+				-w /xv6-labs-2020 -v "$(shell pwd):/xv6-labs-2020" \
+				penglingwei/xv6-labs-2020:latest \
+				/bin/bash
+
 docker-qemu: 
 	-docker rm -f xv6-labs-2020
 	docker run  -it --name "xv6-labs-2020"\
