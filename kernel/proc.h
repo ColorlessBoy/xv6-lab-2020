@@ -108,4 +108,5 @@ struct proc {
   uint64 handler;              // Handler function
   int ticks;                   // The number of ticks since last call
   int inhandler;               // inhandler != 0 when the process is running in handler function
+  struct trapframe handler_trapframe; // The trapframe before into handler
 };

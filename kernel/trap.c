@@ -81,6 +81,7 @@ usertrap(void)
     if(p->inhandler == 0) {
       p->ticks += 1;
       if(p->interval > 0 && p->ticks % p->interval == 0){
+        p->handler_trapframe = *(p->trapframe);
         p->inhandler = 1;
         p->ticks = 0;
         p->trapframe->epc = p->handler;
