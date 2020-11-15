@@ -65,6 +65,22 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 13 || r_scause() == 15){
+    char *mem;
+    uint64 va = r_stval();
+    mem = kalloc();
+    if(mem == 0){
+      // run out of physical memory, 
+      // wait for an empty page.
+      yield();
+    }
+    memset(mem, 0, PGSIZE);
+    if(mappages(myproc()->pagetable, va, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+      kfree(mem);
+      printf("usertrap() lazy: unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      p->killed = 1;
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
