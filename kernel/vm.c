@@ -6,6 +6,9 @@
 #include "defs.h"
 #include "fs.h"
 
+#include "spinlock.h"
+#include "proc.h"
+
 /*
  * the kernel's page table.
  */
@@ -100,11 +103,25 @@ walkaddr(pagetable_t pagetable, uint64 va)
   if(va >= MAXVA)
     return 0;
 
+  // pte = walk(pagetable, va, 0);
   pte = walk(pagetable, va, 0);
-  if(pte == 0)
-    return 0;
-  if((*pte & PTE_V) == 0)
-    return 0;
+  if(pte == 0 || (*pte & PTE_V) == 0){
+    struct proc *p = myproc();
+    if(va >= p->sz)
+      return 0;
+
+    char *mem = kalloc();
+    if(mem == 0){
+      return 0;
+    }
+    memset(mem, 0, PGSIZE);
+    if(mappages(pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+      kfree(mem);
+      return 0;
+    }else{
+      return (uint64)mem;
+    }
+  }
   if((*pte & PTE_U) == 0)
     return 0;
   pa = PTE2PA(*pte);
@@ -156,8 +173,10 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
-    if(*pte & PTE_V)
-      panic("remap");
+    if(*pte & PTE_V){
+      return -1;
+      // panic("remap");
+    }
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
@@ -180,8 +199,10 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+    if((pte = walk(pagetable, a, 0)) == 0){
+      continue;
+      // panic("uvmunmap: walk");
+    }
     if((*pte & PTE_V) == 0){
       continue;
       // panic("uvmunmap: not mapped");
@@ -316,10 +337,14 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+    if((pte = walk(old, i, 0)) == 0){
+      continue;
+      // panic("uvmcopy: pte should exist");
+    }
+    if((*pte & PTE_V) == 0){
+      continue;
+      // panic("uvmcopy: page not present");
+    }
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -441,4 +466,32 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+// Recursively print page-table pages information.
+void
+vmprint1(pagetable_t pagetable, int deepth)
+{
+  if(deepth == 0)
+    printf("page table %p\n", pagetable);
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V){
+      uint64 child = PTE2PA(pte);
+
+      for(int j = 0; j < deepth; ++j)
+        printf(".. ");
+      printf("..%d: pte %p pa %p\n", i, pte, child);
+
+      if((pte & (PTE_R|PTE_W|PTE_X)) == 0) 
+        // this PTE points to a lower-level page table.
+        vmprint1((pagetable_t)child, deepth+1);
+    }
+  }
+}
+void
+vmprint(pagetable_t pagetable)
+{
+  vmprint1(pagetable, 0);
 }
