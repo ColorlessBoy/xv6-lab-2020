@@ -23,10 +23,25 @@ struct {
   struct run *freelist;
 } kmem;
 
+struct {
+  struct spinlock lock;
+  uint64 cnt[PHYSTOP>>PGSHIFT]; 
+} pacnt; // physical addresses' reference count
+
+void
+incpacnt(uint64 pa)
+{
+  acquire(&pacnt.lock);
+  pacnt.cnt[(uint64)pa >> PGSHIFT]++;
+  release(&pacnt.lock);
+}
+
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&pacnt.lock, "pacnt");
+
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -46,6 +61,15 @@ freerange(void *pa_start, void *pa_end)
 void
 kfree(void *pa)
 {
+  acquire(&pacnt.lock);
+  if(pacnt.cnt[(uint64)pa >> PGSHIFT] > 0)
+    pacnt.cnt[(uint64)pa >> PGSHIFT]--;
+  if(pacnt.cnt[(uint64)pa >> PGSHIFT] > 0){
+    release(&pacnt.lock);
+    return;
+  }
+  release(&pacnt.lock);
+
   struct run *r;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
@@ -76,7 +100,11 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  // update the physical address' reference count
+  incpacnt((uint64)r);
+
+  if(r){
     memset((char*)r, 5, PGSIZE); // fill with junk
+  }
   return (void*)r;
 }
