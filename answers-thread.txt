@@ -1,0 +1,1 @@
+Because caller-saved registers are saved in trampline pages by C languarage.
