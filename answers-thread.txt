@@ -1,1 +1,6 @@
-Because caller-saved registers are saved in trampline pages by C languarage.
+Q1: thread_switch needs to save/restore only the callee-save registers. Why?
+A1: Because caller-saved registers are saved in trampline pages by C languarage.
+
+Q2: Why are there missing keys with 2 threads, but not with 1 thread? Identify a sequence of events with 2 threads that can lead to a key being missing. Submit your sequence with a short explanation in answers-thread.txt
+A1: Because the code of `ph.c:put()` will be visited by two cores in turns. And it will cause race.
+
