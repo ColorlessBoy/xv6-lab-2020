@@ -308,7 +308,36 @@ sys_open(void)
       end_op();
       return -1;
     }
+
     ilock(ip);
+
+    // Symbolic inode
+    if(!(omode & O_NOFOLLOW)){
+      for(int i = 0; i < 10; ++i){
+        if(ip->type == T_SYMLINK){
+          memset(path, 0, MAXPATH);
+          if(readi(ip, 0, (uint64)path, ip->size-MAXPATH, MAXPATH) < 0){
+            iunlockput(ip);
+            end_op();
+            return -1;
+          }
+          iunlockput(ip);
+          if((ip = namei(path)) == 0){
+            end_op();
+            return -1;
+          }
+          ilock(ip);
+        } else {
+          break;
+        }
+      }
+      if(ip->type == T_SYMLINK){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+    }
+    // Directory
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
@@ -488,5 +517,26 @@ sys_pipe(void)
 uint64
 sys_symlink(void)
 {
+  char new[MAXPATH], target[MAXPATH];
+  struct inode *ip_new;
+
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+
+  ip_new = create(new, T_SYMLINK, 0, 0);
+  if(ip_new == 0){
+    end_op();
+    return -1;
+  }
+
+  // Copy target name to the symbolic inode.
+  if(writei(ip_new, 0, (uint64)target, ip_new->size, MAXPATH) < 0){
+    panic("symbolic panic");
+  }
+  iunlockput(ip_new);
+
+  end_op();
   return 0;
 }
