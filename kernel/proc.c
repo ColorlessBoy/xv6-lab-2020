@@ -296,6 +296,18 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  // mmap
+  for(i = 0; i < NVMAS; ++i) {
+    if(p->vmas[i].addr) {
+      np->vmas[i].addr   = p->vmas[i].addr;
+      np->vmas[i].length = p->vmas[i].length;
+      np->vmas[i].prot   = p->vmas[i].prot;
+      np->vmas[i].flags  = p->vmas[i].flags;
+      np->vmas[i].f      = filedup(p->vmas[i].f);
+      np->vmas[i].offset = p->vmas[i].offset;
+    }
+  }
+
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -343,6 +355,19 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+  
+  for(int i = 0; i < NVMAS; ++i){
+    if(p->vmas[i].addr){
+      uvmmunmap(p->pagetable, p->vmas[i].addr, p->vmas[i].length, &(p->vmas[i]));
+      fileclose(p->vmas[i].f);
+      p->vmas[i].addr = 0;
+      p->vmas[i].length = 0; 
+      p->vmas[i].prot = 0;
+      p->vmas[i].flags = 0;
+      p->vmas[i].f = 0;
+      p->vmas[i].offset = 0;
+    }
+  }
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

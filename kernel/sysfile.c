@@ -485,14 +485,83 @@ sys_pipe(void)
   return 0;
 }
 
+/*
+void *mmap(void *addr, size_t length, int prot, int flags,
+           int fd, off_t offset);
+*/
+#define MAP_FAILED (uint64)((char *) -1)
+
 uint64
 sys_mmap(void)
 {
-  return 0;
+  uint64 addr;
+  uint length, offset;
+  int prot, flags, i;
+  struct file *f;
+  struct proc *p = myproc();
+
+  if(argaddr(0, &addr) < 0 || argint(1, (int*)&length) < 0 || argint(2, &prot) < 0
+  || argint(3, &flags) < 0 || argfd(4, 0, &f) < 0 || argint(5, (int*)&offset) < 0){
+    return MAP_FAILED;
+  }
+
+  if(f->type != FD_INODE || (!f->writable && (prot & PROT_WRITE) && (flags & MAP_SHARED))){
+    return MAP_FAILED;
+  }
+
+  if(addr == 0){
+    addr = p->sz;
+    p->sz += length;
+  } else {
+    // panic("sys_mmap: addr != 0");
+    return MAP_FAILED;
+  }
+
+  for(i = 0; i < NVMAS; ++i) {
+    if(p->vmas[i].addr == 0) {
+      p->vmas[i].addr = addr;
+      p->vmas[i].length = PGROUNDUP(length);
+      p->vmas[i].prot = prot;
+      p->vmas[i].flags = flags;
+      p->vmas[i].f = filedup(f);
+      p->vmas[i].offset = offset;
+      break;
+    }
+  }
+  if(i == NVMAS)
+    return MAP_FAILED;
+  
+  return addr;
 }
 
 uint64
 sys_munmap(void)
 {
+  uint64 va;
+  uint length;
+  struct proc *p = myproc();
+
+  if(argaddr(0, &va) < 0 || argint(1, (int*)&length) < 0){
+    return -1;
+  }
+
+  va = PGROUNDDOWN(va);
+
+  for(int i = 0; i < NVMAS; ++i){
+    if(p->vmas[i].addr != 0 && va >= p->vmas[i].addr 
+      && va < p->vmas[i].addr + p->vmas[i].length){
+      uvmmunmap(p->pagetable, va, length, &(p->vmas[i]));
+      if(p->vmas[i].used == 0){
+        fileclose(p->vmas[i].f);
+        p->vmas[i].addr = 0;
+        p->vmas[i].length = 0; 
+        p->vmas[i].prot = 0;
+        p->vmas[i].flags = 0;
+        p->vmas[i].f = 0;
+        p->vmas[i].offset = 0;
+        break;
+      }
+    }
+  }
   return 0;
 }

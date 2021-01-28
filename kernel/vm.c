@@ -7,7 +7,10 @@
 #include "fs.h"
 
 #include "spinlock.h"
+#include "sleeplock.h"
 #include "proc.h"
+#include "file.h"
+#include "fcntl.h"
 
 /*
  * the kernel's page table.
@@ -445,5 +448,40 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return 0;
   } else {
     return -1;
+  }
+}
+
+void
+uvmmunmap(pagetable_t pagetable, uint64 va, uint64 length, struct VMA *vma)
+{
+  uint64 a;
+  pte_t *pte;
+
+  if((va % PGSIZE) != 0)
+    panic("uvmmunmap: not aligned");
+
+  for(a = va; a < va + length && a < va + vma->length; a += PGSIZE){
+    if((pte = walk(pagetable, a, 0)) == 0)
+      continue;
+    if((*pte & PTE_V) == 0)
+      continue;
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("uvmunmap: not a leaf");
+
+    if((vma->flags & MAP_SHARED) && vma->f->writable && (vma->prot & PROT_WRITE)){
+      begin_op();
+      ilock(vma->f->ip);
+      writei(vma->f->ip, 1, a, a + vma->offset - vma->addr, PGSIZE);
+      iunlock(vma->f->ip);
+      end_op();
+    }
+
+    vma->used -= PGSIZE;
+    if(vma->used < 0)
+      panic("uvmmunmap: vma->used < 0");
+
+    uint64 pa = PTE2PA(*pte);
+    kfree((void*)pa);
+    *pte = 0;
   }
 }

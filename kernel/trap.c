@@ -6,6 +6,10 @@
 #include "proc.h"
 #include "defs.h"
 
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
+
 struct spinlock tickslock;
 uint ticks;
 
@@ -68,7 +72,7 @@ usertrap(void)
   }else if(r_scause() == 13 || r_scause() == 15){
     char *mem;
     uint64 va = r_stval();
-    if(va >= myproc()->sz){
+    if(va >= p->sz){
       p->killed = 1;
     }else{
       mem = kalloc();
@@ -77,11 +81,36 @@ usertrap(void)
         // wait for an empty page.
         p->killed = 1;
       }else{
+        int i;
         memset(mem, 0, PGSIZE);
-        if(mappages(myproc()->pagetable, PGROUNDDOWN(va), PGSIZE, 
-          (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-          kfree(mem);
-          p->killed = 1;
+
+        // mmap
+        for(i = 0; i < NVMAS; ++i){
+          if(p->vmas[i].addr != 0 && va >= p->vmas[i].addr 
+            && va < p->vmas[i].addr + p->vmas[i].length){
+            va = PGROUNDDOWN(va);
+            ilock(p->vmas[i].f->ip);
+            if(readi(p->vmas[i].f->ip, 0, (uint64)mem, 
+              va + p->vmas[i].offset - p->vmas[i].addr, PGSIZE) < 0){
+              panic("mmap read failed");
+            }
+            iunlock(p->vmas[i].f->ip);
+            p->vmas[i].used += PGSIZE;
+            if(mappages(p->pagetable, va, PGSIZE, 
+              (uint64)mem, (p->vmas[i].prot << 1)|PTE_U) != 0){
+              kfree(mem);
+              p->killed = 1;
+            }
+            break;
+          }
+        }
+        // not mmap
+        if(i == NVMAS){
+          if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, 
+            (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+            kfree(mem);
+            p->killed = 1;
+          }
         }
       }
     }
